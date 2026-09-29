@@ -1,0 +1,21 @@
+# Dependencies — har machine/container apna `npm ci` chalata hai
+node_modules/
+
+# Secrets — sirf .env.example commit hota hai (khaali values ke saath)
+.env
+.env.*
+!.env.example
+
+# Has machine details and a Jenkins password — must never reach GitHub
+CLAUDE.md
+
+# Build / test output
+dist/
+coverage/
+e2e/reports/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
