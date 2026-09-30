@@ -122,6 +122,11 @@ plus `dist/`.
 
 The footer shows the live backend version and database status from `/api/health`.
 
+Product images are SVG line illustrations in `frontend/src/assets/products/<slug>.svg`,
+matched to products by slug — no image server, CDN or database column. Vite inlines them
+into the bundle (all six ≈ 3 KB). A product without a file shows its initials instead.
+No web fonts either: the system font stack means one less download.
+
 [nginx.conf](frontend/nginx.conf) does four jobs:
 
 - **`/api/` → backend.** `proxy_pass` uses a variable, so nginx resolves `backend` via

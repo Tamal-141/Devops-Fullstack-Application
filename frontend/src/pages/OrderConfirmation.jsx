@@ -8,7 +8,7 @@ export default function OrderConfirmation() {
 
   if (!order) {
     return (
-      <section>
+      <section className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
         <p className="text-slate-600">No recent order to show.</p>
         <Link to="/" className="mt-4 inline-block font-medium text-indigo-600 hover:underline">
           Browse products
@@ -18,16 +18,30 @@ export default function OrderConfirmation() {
   }
 
   return (
-    <section className="mx-auto max-w-md rounded-xl border border-emerald-200 bg-white p-6 shadow-sm">
-      <h1 className="text-2xl font-bold text-emerald-700">Order placed</h1>
-      <p className="mt-1 text-slate-500">Order #{order.id}</p>
-      <dl className="mt-6 space-y-2 text-sm">
+    <section className="mx-auto max-w-md rounded-2xl border border-emerald-200 bg-white p-8 shadow-lg">
+      <div className="flex items-center gap-3">
+        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12l5 5 9-10" />
+          </svg>
+        </span>
+        <div>
+          <h1 className="text-2xl font-bold text-emerald-700">Order placed</h1>
+          <p className="text-sm text-slate-500">Order #{order.id}</p>
+        </div>
+      </div>
+      <dl className="mt-6 space-y-3 rounded-xl bg-slate-50 p-4 text-sm">
         <Row label="Product" value={order.productName} />
         <Row label="Quantity" value={order.quantity} />
         <Row label="Unit price" value={formatPrice(order.unitPriceCents)} />
-        <Row label="Total" value={formatPrice(order.totalCents)} strong />
+        <div className="border-t border-slate-200 pt-3">
+          <Row label="Total" value={formatPrice(order.totalCents)} strong />
+        </div>
       </dl>
-      <Link to="/" className="mt-6 inline-block font-medium text-indigo-600 hover:underline">
+      <Link
+        to="/"
+        className="mt-6 block rounded-lg bg-linear-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-center font-semibold text-white shadow-md hover:brightness-110"
+      >
         Continue shopping
       </Link>
     </section>
@@ -38,7 +52,7 @@ function Row({ label, value, strong = false }) {
   return (
     <div className="flex justify-between">
       <dt className="text-slate-500">{label}</dt>
-      <dd className={strong ? 'font-semibold' : ''}>{value}</dd>
+      <dd className={strong ? 'text-base font-bold text-slate-900' : 'font-medium'}>{value}</dd>
     </div>
   );
 }
