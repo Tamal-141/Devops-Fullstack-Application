@@ -24,13 +24,20 @@ pipeline {
                     // Short SHA = image tag, so every image traces back to exact code.
                     // (For a PR-<n> job this is the SHA of the PR merged into main.)
                     env.IMAGE_TAG = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
+                    // Compose reads this env var as the project name. One name per branch
+                    // keeps CI stacks apart from each other and from a local `shoplite`
+                    // stack on the same machine — and lets post{} run `down -v` safely.
+                    env.COMPOSE_PROJECT_NAME = ('shoplite-ci-' + (env.BRANCH_NAME ?: 'build'))
+                        .toLowerCase().replaceAll('[^a-z0-9_-]', '-')
                 }
-                echo "Branch ${env.BRANCH_NAME} @ ${env.IMAGE_TAG}"
+                echo "Branch ${env.BRANCH_NAME} @ ${env.IMAGE_TAG}, compose project ${env.COMPOSE_PROJECT_NAME}"
                 // Fail here, with a clear message, if the agent lacks the tools the
                 // later stages assume. `--target` stage skipping needs BuildKit (buildx).
                 sh '''
                     docker version --format 'docker {{.Server.Version}} ({{.Server.Arch}})'
                     docker buildx version
+                    docker compose version
+                    openssl version
                 '''
             }
         }
@@ -80,10 +87,49 @@ pipeline {
                 '''
             }
         }
+
+        // The image just built, against a real MySQL, checked with real HTTP requests.
+        stage('Integration') {
+            steps {
+                // Throwaway secrets for a throwaway stack: fresh every build, never in git.
+                // `set +x` stops Jenkins' shell tracing from printing them into the log.
+                sh '''
+                    set +x
+                    {
+                        echo "MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)"
+                        echo "MYSQL_PASSWORD=$(openssl rand -hex 16)"
+                        echo "JWT_SECRET=$(openssl rand -hex 32)"
+                        echo "SEED_USER_EMAIL=ci@shoplite.test"
+                        echo "SEED_USER_PASSWORD=$(openssl rand -hex 12)"
+                    } > .env
+                '''
+                // --no-build: test exactly the image from 'Build images', never a rebuild.
+                // --wait: return only once every healthcheck passes; fail if one doesn't.
+                sh 'docker compose up -d --no-build --wait --wait-timeout 180 mysql backend'
+                sh 'docker compose --profile test run --rm api-smoke'
+            }
+            post {
+                always {
+                    // Keep the containers' logs with the build — the first place to look
+                    // when this stage goes red.
+                    sh 'docker compose logs --no-color --timestamps > compose.log 2>&1 || true'
+                    archiveArtifacts artifacts: 'compose.log', allowEmptyArchive: true
+                }
+            }
+        }
     }
 
     post {
         always {
+            // `down -v` deletes volumes, so it only ever runs for a shoplite-ci-* project.
+            // If COMPOSE_PROJECT_NAME were ever unset, compose would fall back to the
+            // compose file's `name: shoplite` — the local stack — and wipe its data.
+            sh '''
+                case "${COMPOSE_PROJECT_NAME:-}" in
+                    shoplite-ci-*) docker compose --profile test down -v --remove-orphans || true ;;
+                    *) echo "Not running 'down -v' for project '${COMPOSE_PROJECT_NAME:-<unset>}'" ;;
+                esac
+            '''
             // The build cache stays (that is what keeps rebuilds fast); only this
             // build's tagged image goes, so the agent's disk doesn't fill with one
             // image per commit.

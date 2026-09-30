@@ -38,7 +38,11 @@ The repo is built up one stage at a time, each as its own PR:
 | Lint | `docker build --output type=cacheonly --target lint backend` |
 | Unit tests | `docker build --output type=cacheonly --target test backend` |
 | Build images | builds `shoplite-backend:<sha>`, then smoke-tests it: with no config it must exit 1 with `invalid configuration` |
-| post | removes the build's image, deletes the workspace |
+| Integration | throwaway `.env` (random secrets) → `docker compose up --wait` → [`scripts/api-smoke.sh`](scripts/api-smoke.sh); container logs archived as `compose.log` |
+| post | `down -v` of the CI stack (only for `shoplite-ci-*` projects), removes the image, deletes the workspace |
+
+Each branch gets its own compose project, `shoplite-ci-<branch>`, so CI stacks never
+touch a local `shoplite` stack on the same machine.
 
 ### Job setup (one time)
 
@@ -64,6 +68,40 @@ the controller, so the controller's broken native binaries are never used; the a
 `git clone` happens on the agent. It also posts ✅/❌ back onto each PR — which is why
 the PAT needs *Commit statuses: write*. Authenticated API calls get 5000 requests/hour;
 anonymous gets 60, which a 2-minute scan would exhaust.
+
+## Run locally (Docker Compose)
+
+Needs Docker with the compose plugin, e.g. the `docker-lab` VM (not the Mac).
+
+```bash
+git clone https://github.com/Tamal-141/Devops-Fullstack-Application.git shoplite && cd shoplite
+cp .env.example .env
+# fill the empty values: openssl rand -hex 16 (JWT_SECRET: openssl rand -hex 32)
+docker compose up -d --build --wait
+docker compose --profile test run --rm api-smoke
+```
+
+| Want to | Command |
+|---|---|
+| See status / health | `docker compose ps` |
+| Follow backend logs | `docker compose logs -f backend` |
+| Query the DB | `docker compose exec mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'` |
+| Stop, **keep** data | `docker compose down` |
+| Stop and **delete all data** ⚠️ | `docker compose down -v` |
+
+Only `down -v` removes the `mysql-data` volume. Orders survive `down` / `up`, rebuilds
+and container recreation — that is the point of a named volume.
+
+Backend and MySQL publish no ports; they are reachable only on the compose network.
+`api-smoke` reaches the backend the same way nginx will: another container, Docker DNS,
+`http://backend:3000`.
+
+**MYSQL_\* values in `.env` are read only when the volume is first created.** Change
+`MYSQL_PASSWORD` afterwards and the backend exits with a 1045 hint. Either put the old
+value back, or `down -v` (data loss) to start fresh with the new one.
+
+Tuned memory use on the stack (measured): MySQL ~140 MiB (limit 700m), backend ~25 MiB
+(limit 250m).
 
 ## Backend (`backend/`)
 

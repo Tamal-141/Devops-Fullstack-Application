@@ -1,0 +1,91 @@
+# Local + CI stack. Production (EC2) gets its own docker-compose.prod.yml, which pulls
+# images from Docker Hub instead of building them.
+#
+#   cp .env.example .env    # then fill in the empty values
+#   docker compose up -d --build --wait
+#   docker compose --profile test run --rm api-smoke
+#
+# `${VAR:?message}` makes compose refuse to start when VAR is unset or empty, instead
+# of quietly starting MySQL with an empty password.
+
+name: shoplite
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-shoplite}
+      MYSQL_USER: ${MYSQL_USER:-shoplite}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./db/my.cnf:/etc/mysql/conf.d/shoplite.cnf:ro
+    mem_limit: 700m
+    healthcheck:
+      # A real login over TCP with the app's own user. `mysqladmin ping` over the socket
+      # already passes during first-time init — the image runs a temporary server with
+      # networking off while it creates users — so "healthy" would come too early and
+      # the backend would get connection refused. `$$` = a literal `$` for the shell
+      # inside the container (compose would otherwise substitute it from .env).
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h 127.0.0.1 -u \"$$MYSQL_USER\" -e 'SELECT 1' \"$$MYSQL_DATABASE\" > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+      args:
+        APP_VERSION: ${IMAGE_TAG:-dev}
+    image: shoplite-backend:${IMAGE_TAG:-dev}
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_USER: ${MYSQL_USER:-shoplite}
+      DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      DB_NAME: ${MYSQL_DATABASE:-shoplite}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SEED_USER_EMAIL: ${SEED_USER_EMAIL:-}
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Cap V8's heap below the container limit, so Node garbage-collects harder
+      # instead of growing until the kernel OOM-kills it (exit 137).
+      NODE_OPTIONS: --max-old-space-size=160
+    depends_on:
+      mysql:
+        condition: service_healthy
+    mem_limit: 250m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # No `ports:` on purpose. Backend and MySQL are reachable only on this compose
+    # network; from Stage 4 on, nginx (frontend) is the one way in from outside.
+
+  # Real HTTP requests against the running stack, from a separate container over
+  # Docker DNS — the same path nginx will use. Only runs when asked for:
+  #   docker compose --profile test run --rm api-smoke
+  api-smoke:
+    image: curlimages/curl:8.22.0
+    profiles: [test]
+    entrypoint: ["sh", "/api-smoke.sh"]
+    volumes:
+      - ./scripts/api-smoke.sh:/api-smoke.sh:ro
+    environment:
+      BASE_URL: http://backend:3000
+      SMOKE_EMAIL: ${SEED_USER_EMAIL:-}
+      SMOKE_PASSWORD: ${SEED_USER_PASSWORD:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  # Named volume: survives `docker compose down` and container recreation.
+  # Only `docker compose down -v` (or `docker volume rm`) deletes it.
+  mysql-data:
