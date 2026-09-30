@@ -2,7 +2,8 @@
 
 A deliberately small e-commerce app whose real purpose is to exercise a full
 CI/CD pipeline: Jenkins → Docker Hub → EC2 (ARM). Decisions and reasoning live in
-[PLAN.md](PLAN.md).
+[PLAN.md](PLAN.md); current status and step-by-step "run it and view it" in
+[PROGRESS.md](PROGRESS.md).
 
 ## Branching
 
