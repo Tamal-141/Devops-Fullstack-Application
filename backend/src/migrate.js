@@ -5,6 +5,15 @@ const mysql = require('mysql2/promise');
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 const LOCK_NAME = 'shoplite_migrations';
 
+// Only NNN_name.sql counts as a migration. Anything else that lands in the folder —
+// editor backups, macOS `._` metadata files — is skipped, not executed as SQL.
+// Sorted as text, so keep the numbers zero-padded (009 before 010).
+const MIGRATION_FILE = /^\d+_[\w-]+\.sql$/;
+
+async function listMigrations(dir = MIGRATIONS_DIR) {
+  return (await fs.readdir(dir)).filter((file) => MIGRATION_FILE.test(file)).sort();
+}
+
 // Applies migrations/*.sql in filename order, once each. Applied filenames are recorded
 // in schema_migrations, so running this on every startup is safe (idempotent).
 async function runMigrations(config, logger, dir = MIGRATIONS_DIR) {
@@ -32,7 +41,7 @@ async function runMigrations(config, logger, dir = MIGRATIONS_DIR) {
 
     const [rows] = await conn.query('SELECT version FROM schema_migrations');
     const applied = new Set(rows.map((row) => row.version));
-    const files = (await fs.readdir(dir)).filter((file) => file.endsWith('.sql')).sort();
+    const files = await listMigrations(dir);
 
     let count = 0;
     for (const file of files) {
@@ -51,4 +60,4 @@ async function runMigrations(config, logger, dir = MIGRATIONS_DIR) {
   }
 }
 
-module.exports = { runMigrations };
+module.exports = { runMigrations, listMigrations };
