@@ -1,0 +1,20 @@
+-- INSERT IGNORE skips rows whose unique slug already exists, so rerunning is harmless.
+INSERT IGNORE INTO products (slug, name, description, price_cents) VALUES
+  ('mechanical-keyboard', 'Mechanical Keyboard',
+   'Tactile brown switches, 75% layout, USB-C. Loud enough that your teammates know you are working.',
+   8900),
+  ('usb-c-hub', 'USB-C Hub',
+   'Seven ports: HDMI, Ethernet, 3x USB-A, SD and pass-through charging.',
+   3400),
+  ('laptop-stand', 'Aluminium Laptop Stand',
+   'Raises the screen to eye level. Folds flat for the commute.',
+   2900),
+  ('noise-cancelling-headphones', 'Noise-Cancelling Headphones',
+   'Over-ear, 30 hours of battery. Blocks out the open-plan office.',
+   14900),
+  ('works-on-my-machine-mug', 'Works On My Machine Mug',
+   '350 ml ceramic mug. Ships in a container, so it works on yours too.',
+   1200),
+  ('rubber-duck', 'Rubber Debugging Duck',
+   'Explain your bug to the duck. The duck does not judge.',
+   500);

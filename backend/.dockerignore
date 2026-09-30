@@ -1,0 +1,9 @@
+# Without this, `COPY . .` would copy the Mac's node_modules (darwin binaries) into
+# a Linux image, and a stray .env would bake secrets into a layer.
+node_modules
+coverage
+npm-debug.log
+.env
+.env.*
+Dockerfile
+.dockerignore
