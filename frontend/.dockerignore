@@ -1,0 +1,11 @@
+# The Mac's node_modules has darwin native binaries (rolldown, lightningcss); the image
+# must install its own linux-arm64-musl ones with `npm ci`.
+node_modules
+dist
+npm-debug.log
+.env
+.env.*
+Dockerfile
+.dockerignore
+**/.DS_Store
+**/._*

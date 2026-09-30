@@ -1,7 +1,10 @@
 #!/bin/sh
-# API smoke test: real HTTP requests against a running stack. Each check proves one
-# layer actually works, not just that a container is "Up":
-#   health 200      → backend can query MySQL
+# Smoke test: real HTTP requests against a running stack, sent to nginx exactly as a
+# browser would. Each check proves one layer actually works, not just that a
+# container is "Up":
+#   page + assets   → nginx serves the React build
+#   deep link 200   → SPA fallback works (refresh on /products/1 isn't a 404)
+#   health 200      → nginx proxies /api, and the backend can query MySQL
 #   products listed → migrations ran and seeded data
 #   login works     → seed user exists, bcrypt + JWT work
 #   order placed    → a write reaches the database
@@ -10,7 +13,7 @@
 # Runs inside the curlimages/curl container (see docker-compose.yml, profile "test").
 set -eu
 
-BASE_URL="${BASE_URL:-http://backend:3000}"
+BASE_URL="${BASE_URL:-http://frontend}"
 : "${SMOKE_EMAIL:?SMOKE_EMAIL is required (SEED_USER_EMAIL in .env)}"
 : "${SMOKE_PASSWORD:?SMOKE_PASSWORD is required (SEED_USER_PASSWORD in .env)}"
 
@@ -19,9 +22,24 @@ pass() { echo "ok   - $*"; }
 # HTTP status only, body discarded.
 status_of() { curl -sS -o /dev/null -w '%{http_code}' "$@"; }
 
-echo "API smoke test against $BASE_URL"
+echo "Smoke test against $BASE_URL"
 
 # -f: HTTP 4xx/5xx → non-zero exit. -sS: no progress bar, but still print errors.
+page=$(curl -fsS "$BASE_URL/") || fail "GET /"
+echo "$page" | grep -q '<div id="root">' || fail "GET /: not the React index.html"
+pass "page: index.html served"
+
+# Every asset index.html references must actually be there.
+for asset in $(echo "$page" | grep -oE '/assets/[^"]+\.(js|css)'); do
+  code=$(status_of "$BASE_URL$asset")
+  [ "$code" = 200 ] || fail "asset $asset: expected 200, got $code"
+  pass "asset $asset"
+done
+
+deep=$(curl -fsS "$BASE_URL/products/1") || fail "GET /products/1 (deep link)"
+echo "$deep" | grep -q '<div id="root">' || fail "deep link: expected index.html (SPA fallback)"
+pass "deep link /products/1 -> index.html"
+
 body=$(curl -fsS "$BASE_URL/api/health") || fail "GET /api/health"
 echo "$body" | grep -q '"db":"up"' || fail "health: expected db up, got $body"
 pass "health: $body"
@@ -57,4 +75,4 @@ body=$(curl -fsS -X POST "$BASE_URL/api/orders" \
 echo "$body" | grep -q '"totalCents"' || fail "order: unexpected response $body"
 pass "order placed: $body"
 
-echo "API smoke test passed"
+echo "Smoke test passed"

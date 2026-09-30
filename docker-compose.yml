@@ -4,6 +4,7 @@
 #   cp .env.example .env    # then fill in the empty values
 #   docker compose up -d --build --wait
 #   docker compose --profile test run --rm api-smoke
+#   open http://<host>:8080  (FRONTEND_PORT)
 #
 # `${VAR:?message}` makes compose refuse to start when VAR is unset or empty, instead
 # of quietly starting MySQL with an empty password.
@@ -66,10 +67,31 @@ services:
       retries: 3
       start_period: 20s
     # No `ports:` on purpose. Backend and MySQL are reachable only on this compose
-    # network; from Stage 4 on, nginx (frontend) is the one way in from outside.
+    # network; nginx (frontend) is the one way in from outside.
 
-  # Real HTTP requests against the running stack, from a separate container over
-  # Docker DNS — the same path nginx will use. Only runs when asked for:
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+    image: shoplite-frontend:${IMAGE_TAG:-dev}
+    restart: unless-stopped
+    ports:
+      # The only published port. 0 = Docker picks a free one (CI uses that, so two
+      # branches building at once never fight over the same port).
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Real HTTP requests against the running stack, from a separate container, through
+  # nginx — the same path a browser's requests take. Only runs when asked for:
   #   docker compose --profile test run --rm api-smoke
   api-smoke:
     image: curlimages/curl:8.22.0
@@ -78,11 +100,11 @@ services:
     volumes:
       - ./scripts/api-smoke.sh:/api-smoke.sh:ro
     environment:
-      BASE_URL: http://backend:3000
+      BASE_URL: http://frontend
       SMOKE_EMAIL: ${SEED_USER_EMAIL:-}
       SMOKE_PASSWORD: ${SEED_USER_PASSWORD:-}
     depends_on:
-      backend:
+      frontend:
         condition: service_healthy
 
 volumes:
