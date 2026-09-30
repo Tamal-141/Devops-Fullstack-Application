@@ -35,11 +35,11 @@ The repo is built up one stage at a time, each as its own PR:
 | Stage | What it does |
 |---|---|
 | Checkout | `checkout scm`, short SHA → `IMAGE_TAG`, checks Docker + buildx exist |
-| Lint | `docker build --output type=cacheonly --target lint backend` |
+| Lint | `docker build --output type=cacheonly --target lint` for `backend` and `frontend` |
 | Unit tests | `docker build --output type=cacheonly --target test backend` |
-| Build images | builds `shoplite-backend:<sha>`, then smoke-tests it: with no config it must exit 1 with `invalid configuration` |
-| Integration | throwaway `.env` (random secrets) → `docker compose up --wait` → [`scripts/api-smoke.sh`](scripts/api-smoke.sh); container logs archived as `compose.log` |
-| post | `down -v` of the CI stack (only for `shoplite-ci-*` projects), removes the image, deletes the workspace |
+| Build images | `shoplite-backend:<sha>` (smoke test: with no config it must exit 1 with `invalid configuration`) and `shoplite-frontend:<sha>` (`nginx -t`) |
+| Integration | throwaway `.env` (random secrets, `FRONTEND_PORT=0`) → `docker compose up --wait` → [`scripts/api-smoke.sh`](scripts/api-smoke.sh) through nginx; container logs archived as `compose.log` |
+| post | `down -v` of the CI stack (only for `shoplite-ci-*` projects), removes both images, deletes the workspace |
 
 Each branch gets its own compose project, `shoplite-ci-<branch>`, so CI stacks never
 touch a local `shoplite` stack on the same machine.
@@ -71,7 +71,7 @@ anonymous gets 60, which a 2-minute scan would exhaust.
 
 ## Run locally (Docker Compose)
 
-Needs Docker with the compose plugin, e.g. the `docker-lab` VM (not the Mac).
+Needs Docker with the compose plugin — the CentOS VM (`192.168.56.12`), not the Mac.
 
 ```bash
 git clone https://github.com/Tamal-141/Devops-Fullstack-Application.git shoplite && cd shoplite
@@ -81,10 +81,14 @@ docker compose up -d --build --wait
 docker compose --profile test run --rm api-smoke
 ```
 
+Then open **http://192.168.56.12:8080** in the Mac's browser and log in with
+`SEED_USER_EMAIL` / `SEED_USER_PASSWORD` from `.env`.
+
 | Want to | Command |
 |---|---|
 | See status / health | `docker compose ps` |
 | Follow backend logs | `docker compose logs -f backend` |
+| Follow nginx access log | `docker compose logs -f frontend` |
 | Query the DB | `docker compose exec mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'` |
 | Stop, **keep** data | `docker compose down` |
 | Stop and **delete all data** ⚠️ | `docker compose down -v` |
@@ -92,16 +96,47 @@ docker compose --profile test run --rm api-smoke
 Only `down -v` removes the `mysql-data` volume. Orders survive `down` / `up`, rebuilds
 and container recreation — that is the point of a named volume.
 
-Backend and MySQL publish no ports; they are reachable only on the compose network.
-`api-smoke` reaches the backend the same way nginx will: another container, Docker DNS,
-`http://backend:3000`.
+Only nginx (`frontend`) publishes a port. Backend and MySQL are reachable only on the
+compose network. `api-smoke` goes through nginx at `http://frontend`, exactly the path a
+browser's requests take.
 
 **MYSQL_\* values in `.env` are read only when the volume is first created.** Change
 `MYSQL_PASSWORD` afterwards and the backend exits with a 1045 hint. Either put the old
 value back, or `down -v` (data loss) to start fresh with the new one.
 
 Tuned memory use on the stack (measured): MySQL ~140 MiB (limit 700m), backend ~25 MiB
-(limit 250m).
+(limit 250m), nginx ~4 MiB (limit 64m).
+
+## Frontend (`frontend/`)
+
+React 19 + Vite + React Router 7 + Tailwind 4, built to static files and served by
+`nginx:1.30-alpine`. Node exists only in the build stage; the shipped image is nginx
+plus `dist/`.
+
+| Page | Route |
+|---|---|
+| Product list | `/` |
+| Product detail + place order | `/products/:id` |
+| Login | `/login` (returns to the product afterwards) |
+| Order confirmation | `/order-confirmed` |
+
+The footer shows the live backend version and database status from `/api/health`.
+
+[nginx.conf](frontend/nginx.conf) does four jobs:
+
+- **`/api/` → backend.** `proxy_pass` uses a variable, so nginx resolves `backend` via
+  Docker DNS per request (cached 10 s). After a redeploy gives the backend a new IP,
+  nginx follows it instead of returning 502 until restarted.
+- **SPA fallback.** Unknown paths serve `index.html`, so a refresh on `/products/3` works.
+- **Caching.** `/assets/*` (content-hashed names) cached for a year; `index.html` never.
+- **`/healthz`** for the container healthcheck, kept out of the access log.
+
+UI development with hot reload on the Mac, against a running stack's nginx:
+
+```bash
+cd frontend && npm ci
+API_TARGET=http://192.168.56.12:8080 npm run dev
+```
 
 ## Backend (`backend/`)
 

@@ -52,6 +52,7 @@ pipeline {
         stage('Lint') {
             steps {
                 sh 'docker build --progress=plain --output type=cacheonly --target lint backend'
+                sh 'docker build --progress=plain --output type=cacheonly --target lint frontend'
             }
         }
 
@@ -85,6 +86,14 @@ pipeline {
                     fi
                     echo "Smoke test passed: image starts and fails fast on missing config"
                 '''
+                sh '''
+                    docker build --progress=plain --target runtime \
+                        -t "shoplite-frontend:$IMAGE_TAG" frontend
+                    docker image ls "shoplite-frontend:$IMAGE_TAG"
+                '''
+                // nginx refuses to start on a bad config, so test it now rather than
+                // find out from a crash-looping container after deploy.
+                sh 'docker run --rm "shoplite-frontend:$IMAGE_TAG" nginx -t'
             }
         }
 
@@ -101,11 +110,12 @@ pipeline {
                         echo "JWT_SECRET=$(openssl rand -hex 32)"
                         echo "SEED_USER_EMAIL=ci@shoplite.test"
                         echo "SEED_USER_PASSWORD=$(openssl rand -hex 12)"
+                        echo "FRONTEND_PORT=0"
                     } > .env
                 '''
-                // --no-build: test exactly the image from 'Build images', never a rebuild.
+                // --no-build: test exactly the images from 'Build images', never a rebuild.
                 // --wait: return only once every healthcheck passes; fail if one doesn't.
-                sh 'docker compose up -d --no-build --wait --wait-timeout 180 mysql backend'
+                sh 'docker compose up -d --no-build --wait --wait-timeout 180 mysql backend frontend'
                 sh 'docker compose --profile test run --rm api-smoke'
             }
             post {
@@ -133,7 +143,7 @@ pipeline {
             // The build cache stays (that is what keeps rebuilds fast); only this
             // build's tagged image goes, so the agent's disk doesn't fill with one
             // image per commit.
-            sh 'docker image rm "shoplite-backend:$IMAGE_TAG" || true'
+            sh 'docker image rm "shoplite-backend:$IMAGE_TAG" "shoplite-frontend:$IMAGE_TAG" || true'
             deleteDir()
         }
     }
