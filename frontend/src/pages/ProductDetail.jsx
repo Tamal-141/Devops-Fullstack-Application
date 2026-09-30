@@ -19,7 +19,18 @@ export default function ProductDetail() {
   const [placing, setPlacing] = useState(false);
   const [orderError, setOrderError] = useState(null);
 
-  if (loading) return <p className="text-slate-500">Loading…</p>;
+  if (loading) {
+    return (
+      <div className="grid animate-pulse gap-8 md:grid-cols-2" aria-busy="true">
+        <div className="h-72 rounded-xl bg-slate-200" />
+        <div className="space-y-4">
+          <div className="h-8 w-3/4 rounded bg-slate-200" />
+          <div className="h-6 w-24 rounded bg-slate-200" />
+          <div className="h-20 rounded bg-slate-100" />
+        </div>
+      </div>
+    );
+  }
   if (error) {
     return (
       <section>
@@ -57,40 +68,50 @@ export default function ProductDetail() {
   return (
     <section>
       <BackLink />
-      <div className="mt-4 grid gap-8 md:grid-cols-2">
+      <div className="mt-4 grid gap-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2">
         <ProductTile product={product} large />
-        <div>
-          <h1 className="text-3xl font-bold">{product.name}</h1>
-          <p className="mt-2 text-2xl font-semibold text-indigo-600">{formatPrice(product.priceCents)}</p>
-          <p className="mt-4 leading-relaxed text-slate-600">{product.description}</p>
+        <div className="flex flex-col">
+          <h1 className="text-3xl font-extrabold">{product.name}</h1>
+          <p className="mt-3">
+            <span className="rounded-full bg-indigo-50 px-4 py-1.5 text-xl font-bold text-indigo-700">
+              {formatPrice(product.priceCents)}
+            </span>
+          </p>
+          <p className="mt-5 leading-relaxed text-slate-600">{product.description}</p>
 
-          <div className="mt-6 flex items-end gap-3">
-            <label className="text-sm font-medium" htmlFor="quantity">
-              Quantity
-              <select
-                id="quantity"
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="mt-1 block rounded-md border border-slate-300 bg-white px-3 py-2"
+          <div className="mt-auto pt-8">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm font-medium text-slate-700" htmlFor="quantity">
+                Quantity
+                <select
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  className="mt-1 block rounded-lg border border-slate-300 bg-white px-3 py-2.5 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  {QUANTITIES.map((q) => (
+                    <option key={q} value={q}>
+                      {q}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={placeOrder}
+                disabled={placing}
+                className="flex-1 rounded-lg bg-linear-to-r from-indigo-600 to-violet-600 px-6 py-2.5 font-semibold text-white shadow-md transition hover:shadow-lg hover:brightness-110 disabled:opacity-60"
               >
-                {QUANTITIES.map((q) => (
-                  <option key={q} value={q}>
-                    {q}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={placeOrder}
-              disabled={placing}
-              className="rounded-md bg-indigo-600 px-5 py-2 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {!user ? 'Log in to order' : placing ? 'Placing order…' : 'Place order'}
-            </button>
+                {!user ? 'Log in to order' : placing ? 'Placing order…' : 'Place order'}
+              </button>
+            </div>
+            {user && (
+              <p className="mt-3 text-sm text-slate-500">
+                Total: <span className="font-semibold text-slate-800">{formatPrice(product.priceCents * quantity)}</span>
+              </p>
+            )}
+            {orderError && <ErrorBox message={orderError} />}
           </div>
-          {user && <p className="mt-2 text-sm text-slate-500">Total: {formatPrice(product.priceCents * quantity)}</p>}
-          {orderError && <ErrorBox message={orderError} />}
         </div>
       </div>
     </section>
