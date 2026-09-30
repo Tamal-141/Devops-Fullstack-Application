@@ -28,6 +28,43 @@ The repo is built up one stage at a time, each as its own PR:
 | 5 | `feature/e2e` | Playwright E2E stage |
 | 6 | `feature/deploy` | Prod compose, EC2 setup, push + deploy stages |
 
+## CI (Jenkins)
+
+[Jenkinsfile](Jenkinsfile) runs every stage on the `centos-agent` (label `centos`):
+
+| Stage | What it does |
+|---|---|
+| Checkout | `checkout scm`, short SHA → `IMAGE_TAG`, checks Docker + buildx exist |
+| Lint | `docker build --output type=cacheonly --target lint backend` |
+| Unit tests | `docker build --output type=cacheonly --target test backend` |
+| Build images | builds `shoplite-backend:<sha>`, then smoke-tests it: with no config it must exit 1 with `invalid configuration` |
+| post | removes the build's image, deletes the workspace |
+
+### Job setup (one time)
+
+The job **must be a Multibranch Pipeline** — `when { branch 'main' }` in later stages
+relies on `BRANCH_NAME`, which only multibranch jobs set.
+
+1. **Credential** — GitHub fine-grained PAT, repo `Devops-Fullstack-Application` only,
+   permissions *Contents: Read*, *Commit statuses: Read and write*, *Pull requests: Read*
+   (Metadata: Read is added automatically). In Jenkins: *Manage Jenkins → Credentials →
+   System → Global → Add*: kind **Username with password**, username `Tamal-141`,
+   password = the PAT, ID **`github-pat`**.
+2. **Job** — *New Item* → name `shoplite` → **Multibranch Pipeline**.
+3. **Branch Sources → Add source → GitHub**: credentials `github-pat`, repository URL
+   `https://github.com/Tamal-141/Devops-Fullstack-Application`. Keep the default
+   behaviours (discover branches + PRs from origin).
+4. **Scan Multibranch Pipeline Triggers** → *Periodically if not otherwise run* →
+   **2 minutes**. This is the multibranch equivalent of Poll SCM: each scan finds new
+   branches/PRs and builds whatever changed.
+5. Save. Jenkins scans immediately and starts a build for each branch with a Jenkinsfile.
+
+Why the GitHub source and not plain Git: it scans through the GitHub API from Java on
+the controller, so the controller's broken native binaries are never used; the actual
+`git clone` happens on the agent. It also posts ✅/❌ back onto each PR — which is why
+the PAT needs *Commit statuses: write*. Authenticated API calls get 5000 requests/hour;
+anonymous gets 60, which a 2-minute scan would exhaust.
+
 ## Backend (`backend/`)
 
 Node 20 + Express 5, mysql2 pool, zod, JWT + bcrypt. On startup it waits for MySQL,
